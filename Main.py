@@ -487,4 +487,36 @@ class ADCTrainer:
             
             # Train
             train_losses = self.train_epoch()
-            print(f"TRAIN    Total: {train_losses['total_loss']:.6f}  Action: {train_losses['action_loss']:
+            print(f"TRAIN    Total: {train_losses['total_loss']:.6f}  Action: {train_losses['action_loss']:.6f}  Query: {train_losses['query_loss']:.6f}  Coord: {train_losses['coord_loss']:.6f}")
+            
+            # Evaluate
+            val_losses = self.evaluate(self.val_loader, "Validating")
+            test_losses = self.evaluate(self.test_loader, "Testing")
+            
+            print(f"VAL      Total: {val_losses['total_loss']:.6f}  Action: {val_losses['action_loss']:.6f}  Query: {val_losses['query_loss']:.6f}  Coord: {val_losses['coord_loss']:.6f}")
+            print(f"TEST     Total: {test_losses['total_loss']:.6f}  Action: {test_losses['action_loss']:.6f}  Query: {test_losses['query_loss']:.6f}  Coord: {test_losses['coord_loss']:.6f}")
+            
+            # Get current learning rate
+            current_lr = self.optimizer.param_groups[0]['lr']
+            
+            # Log results to file
+            self.log_results(
+                self.current_epoch,
+                train_losses,
+                val_losses,
+                test_losses,
+                current_lr
+            )
+            
+            # Schedule learning rate based on validation total loss (only if finite)
+            if torch.isfinite(torch.tensor(val_losses['total_loss'])):
+                self.scheduler.step(val_losses['total_loss'])
+            
+            print(f"Learning Rate: {current_lr:.2e}")
+            
+            # Save model if criteria met
+            self.save_model(self.current_epoch, test_losses['total_loss'], val_losses['total_loss'])
+        
+        print("\nTraining completed!")
+        print(f"Best Test MSE: {self.best_test_mse:.6f}")
+        print(f"Val MSE at Best Test: {self.best_val_mse_at_best_test:.6f}")
