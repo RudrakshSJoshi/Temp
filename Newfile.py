@@ -1,53 +1,30 @@
-import matplotlib.pyplot as plt
-import numpy as np
+from transformers import LlavaNextForConditionalGeneration, LlavaNextProcessor
+import torch
+from PIL import Image
+import requests
 
-# Set random seed for reproducibility
-np.random.seed(42)
+# Load the model (choose one based on your hardware)
+model_id = "llava-hf/llava-v1.6-vicuna-7b-hf"  # Smaller 7B version
+# model_id = "llava-hf/llava-v1.6-vicuna-13b-hf"  # Larger 13B version
 
-# Epoch range
-epochs = np.arange(1, 51)
+device = "cuda" if torch.cuda.is_available() else "cpu"
 
-# Train Loss: Monotonically decreasing hyperbolic-like with light noise
-train_loss = 5 / (0.3 * epochs + 1) + 0.05 * np.random.randn(50)
-train_loss = np.maximum.accumulate(train_loss[::-1])[::-1]  # force monotonic decrease
+# Load processor and model
+processor = LlavaNextProcessor.from_pretrained(model_id)
+model = LlavaNextForConditionalGeneration.from_pretrained(
+    model_id, 
+    torch_dtype=torch.float16, 
+    low_cpu_mem_usage=True
+).to(device)
 
-# Train Accuracy: Sigmoid-like rise with mild noise
-train_acc = 0.238 + (0.78064 - 0.238) * (1 - np.exp(-0.15 * epochs))
-train_acc[46] = 0.78064  # precise value at epoch 47
-train_acc += np.random.normal(0, 0.01, size=train_acc.shape)  # mild random noise
+# Prepare image and prompt
+image_url = "https://llava-vl.github.io/static/images/view.jpg"  # Example image
+image = Image.open(requests.get(image_url, stream=True).raw)
 
-# Test Accuracy: Rises to 0.62498 by epoch 6, then decays with fluctuations
-test_acc = np.zeros(50)
-test_acc[:6] = np.linspace(0.34115, 0.62498, 6)
-decay = np.linspace(0.62498, 0.57779, 44)
-test_acc[6:] = decay + np.random.normal(0, 0.015, 44)  # realistic troughs
+prompt = "USER: <image>\nWhat's in this image?\nASSISTANT:"
 
-# Validation Accuracy: Similar to test but spikier
-val_acc = test_acc - 0.01 + np.random.normal(0, 0.02, size=test_acc.shape)
+# Process and generate
+inputs = processor(prompt, image, return_tensors="pt").to(device)
+output = model.generate(**inputs, max_new_tokens=100)
 
-# Plotting
-plt.figure(figsize=(12, 8))
-
-# Plot Train Loss
-plt.subplot(2, 1, 1)
-plt.plot(epochs, train_loss, label='Train Loss', color='red')
-plt.title('Training Curve')
-plt.xlabel('Epochs')
-plt.ylabel('Loss')
-plt.grid(True)
-plt.legend()
-
-# Plot Accuracies
-plt.subplot(2, 1, 2)
-plt.plot(epochs, train_acc, label='Train Accuracy', color='green')
-plt.plot(epochs, test_acc, label='Test Accuracy', color='blue')
-plt.plot(epochs, val_acc, label='Validation Accuracy', color='orange')
-plt.title('Accuracy Curve')
-plt.xlabel('Epochs')
-plt.ylabel('Accuracy')
-plt.grid(True)
-plt.legend()
-
-plt.tight_layout()
-plt.savefig('training_plot_updated.png')  # Save as PNG
-plt.show()
+print(processor.decode(output[0][2:], skip_special_tokens=True))
